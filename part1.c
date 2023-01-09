@@ -10,8 +10,8 @@ const double c 	= 0.01;			// model parameter c
 const double d 	= 0.0;			// model parameter d
 const double dt	= 0.1;			// time step
 const double dx	= 2.0;			// spatial resolution
-const double DD = 1.0/(2.0*2.0);	// diffusion scaling
-const int m		= (int)(1/0.1);	// Norm calculation
+const double DD = 1.0/(dx*dx);	// diffusion scaling
+const int m		= (int)(1/dt);	// Norm calculation
 
 void init(double u[N][N], double v[N][N]){
     double uhi, ulo, vhi, vlo;
