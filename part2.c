@@ -74,16 +74,16 @@ void dxdt(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
         }
     }
 
-    // Perform a reduction operation on the diffusion term values from all ranks
-    MPI_Allreduce(&lapu, &global_lapu, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-    MPI_Allreduce(&lapv, &global_lapv, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-    // Use the global sum of the diffusion term values to update the du and dv arrays
-    for (int i = start_row; i < end_row; i++){
-        for (int j = 0; j < N; j++){
-            du[i][j] = DD*global_lapu + u[i][j]*(1.0 - u[i][j])*(u[i][j]-b) - v[i][j];
-            dv[i][j] = d*DD*global_lapv + c*(a*u[i][j] - v[i][j]);
-        }
-    }
+//    // Perform a reduction operation on the diffusion term values from all ranks
+//    MPI_Allreduce(&lapu, &global_lapu, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+//    MPI_Allreduce(&lapv, &global_lapv, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+//    // Use the global sum of the diffusion term values to update the du and dv arrays
+//    for (int i = start_row; i < end_row; i++){
+//        for (int j = 0; j < N; j++){
+//            du[i][j] = DD*global_lapu + u[i][j]*(1.0 - u[i][j])*(u[i][j]-b) - v[i][j];
+//            dv[i][j] = d*DD*global_lapv + c*(a*u[i][j] - v[i][j]);
+//        }
+//    }
 }
 
 
@@ -117,8 +117,6 @@ double norm(double x[N][N]){
 }
 
 void exchange_border_rows_with_mpi(double u[N][N], double v[N][N]) {
-    // Determine the rank and number of processes
-
     // Determine the number of rows that each process will handle
     int rows_per_process = N / size;
 
