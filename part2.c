@@ -93,9 +93,6 @@ void step(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
     int rows_per_process = N / size;
     int start_row = rows_per_process * rank;
     int end_row = start_row + rows_per_process;
-
-    // Send and receive values of the border indices to/from neighboring processes
-
     // Update the portion of the grid assigned to this process
     for (int i = start_row; i < end_row; i++){
         for (int j = 0; j < N; j++){
@@ -114,11 +111,42 @@ double norm(double x[N][N]){
             local_norm += x[i][j]*x[i][j];
         }
     }
-
     // Perform a reduction operation on the norm values from all ranks
     MPI_Reduce(&local_norm, &global_norm, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-
     return global_norm;
+}
+
+void exchange_border_rows_with_mpi(double u[N][N], double v[N][N]) {
+    // Determine the rank and number of processes
+
+    // Determine the number of rows that each process will handle
+    int rows_per_process = N / size;
+
+    // Determine the row indices that this process will handle
+    int start_row = rank * rows_per_process;
+    int end_row = start_row + rows_per_process - 1;
+
+    // Send and receive border rows with peer processes
+    if (rank > 0) {
+        // Send top border row to the process with rank-1
+        MPI_Send(u[start_row], N, MPI_DOUBLE, rank-1, 0, MPI_COMM_WORLD);
+        MPI_Send(v[start_row], N, MPI_DOUBLE, rank-1, 1, MPI_COMM_WORLD);
+    }
+    if (rank < size-1) {
+        // Receive bottom border row from the process with rank+1
+        MPI_Recv(u[end_row+1], N, MPI_DOUBLE, rank+1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(v[end_row+1], N, MPI_DOUBLE, rank+1, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+    if (rank < size-1) {
+        // Send bottom border row to the process with rank+1
+        MPI_Send(u[end_row], N, MPI_DOUBLE, rank+1, 2, MPI_COMM_WORLD);
+        MPI_Send(v[end_row], N, MPI_DOUBLE, rank+1, 3, MPI_COMM_WORLD);
+    }
+    if (rank > 0) {
+        // Receive top border row from the process with rank-1
+        MPI_Recv(u[start_row-1], N, MPI_DOUBLE, rank-1, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(v[start_row-1], N, MPI_DOUBLE, rank-1, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
 }
 
 
@@ -142,40 +170,13 @@ int main(int argc, char** argv){
 
     // time-loop
     for (int k=0; k < M; k++){
-        if (rank > 0) {
-            // Send top border row to the process with rank-1
-            MPI_Send(u[start_row], N, MPI_DOUBLE, rank-1, 0, MPI_COMM_WORLD);
-            MPI_Send(v[start_row], N, MPI_DOUBLE, rank-1, 1, MPI_COMM_WORLD);
-        }
-        if (rank < size-1) {
-            // Receive bottom border row from the process with rank+1
-            MPI_Recv(u[end_row+1], N, MPI_DOUBLE, rank+1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            MPI_Recv(v[end_row+1], N, MPI_DOUBLE, rank+1, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        }
-        if (rank < size-1) {
-            // Send bottom border row to the process with rank+1
-            MPI_Send(u[end_row], N, MPI_DOUBLE, rank+1, 2, MPI_COMM_WORLD);
-            MPI_Send(v[end_row], N, MPI_DOUBLE, rank+1, 3, MPI_COMM_WORLD);
-        }
-        if (rank > 0) {
-            // Receive top border row from the process with rank-1
-            MPI_Recv(u[start_row-1], N, MPI_DOUBLE, rank-1, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            MPI_Recv(v[start_row-1], N, MPI_DOUBLE, rank-1, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        }
-//        if (rank > 0) {
-//            MPI_Send(&u[start_row][0], N, MPI_DOUBLE, rank-1, 0, MPI_COMM_WORLD);
-//            MPI_Recv(&u[start_row-1][0], N, MPI_DOUBLE, rank-1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-//        }
-//        if (rank < size-1) {
-//            MPI_Send(&u[end_row-1][0], N, MPI_DOUBLE, rank+1, 0, MPI_COMM_WORLD);
-//            MPI_Recv(&u[end_row][0], N, MPI_DOUBLE, rank+1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-//        }
         // track the time
         t = dt*k;
         // evaluate the PDE
         dxdt(du, dv, u, v);
         // update the state variables u,v
         step(du, dv, u, v);
+        exchange_border_rows_with_mpi(u,v)
         if (k%m == 0){
             // calculate the norms
             nrmu = norm(u);
