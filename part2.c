@@ -112,8 +112,8 @@ double norm(double x[N][N]){
         }
     }
     // Perform a reduction operation on the norm values from all ranks
-    MPI_Reduce(&local_norm, &global_norm, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-    return global_norm;
+//    MPI_Reduce(&local_norm, &global_norm, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    return local_norm;
 }
 
 void exchange_border_rows_with_mpi(double u[N][N], double v[N][N]) {
