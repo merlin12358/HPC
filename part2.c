@@ -146,7 +146,7 @@ double norm(double x[N][N]){
 
 
 int main(int argc, char** argv){
-
+	int size, rank;
     double t = 0.0, nrmu, nrmv;
     double u[N][N], v[N][N], du[N][N], dv[N][N];
     MPI_Status status;
