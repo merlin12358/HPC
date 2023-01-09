@@ -14,20 +14,10 @@ const double DD = 1.0/(dx*dx);	// diffusion scaling
 const int m		= (int)(1/dt);	// Norm calculation
 
 void init(double u[N][N], double v[N][N]){
-    int size, rank;
     double uhi, ulo, vhi, vlo;
     uhi = 0.5; ulo = -0.5; vhi = 0.1; vlo = -0.1;
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    // Determine the portion of the grid that this process will handle
-    int rows_per_process = N / size;
-    int start_row = rows_per_process * rank;
-    int end_row = start_row + rows_per_process;
-
-    // Initialize the portion of the grid assigned to this process
-    for (int i = start_row; i < end_row; i++){
-        for (int j = 0; j < N; j++){
+    for (int i=0; i < N; i++){
+        for (int j=0; j < N; j++){
             u[i][j] = ulo + (uhi-ulo)*0.5*(1.0 + tanh((i-N/2)/16.0));
             v[i][j] = vlo + (vhi-vlo)*0.5*(1.0 + tanh((j-N/2)/16.0));
         }
@@ -40,6 +30,7 @@ void dxdt(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
     int up, down, left, right;
     double global_lapu, global_lapv;
 
+    MPI_Init(NULL, NULL);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
@@ -92,10 +83,13 @@ void dxdt(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
             dv[i][j] = d*DD*global_lapv + c*(a*u[i][j] - v[i][j]);
         }
     }
+    MPI_Finalize();
 }
 
 void step(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
     int size, rank;
+
+    MPI_Init(NULL, NULL);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
@@ -121,12 +115,16 @@ void step(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
             v[i][j] += dt*dv[i][j];
         }
     }
+
+    MPI_Finalize();
 }
 
 
 double norm(double x[N][N]){
     int size, rank;
     double local_norm, global_norm;
+
+    MPI_Init(NULL, NULL);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
@@ -140,12 +138,15 @@ double norm(double x[N][N]){
 
     // Perform a reduction operation on the norm values from all ranks
     MPI_Reduce(&local_norm, &global_norm, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    MPI_Finalize();
+
     return global_norm;
 }
 
 
 int main(int argc, char** argv){
-	int size, rank;
+
     double t = 0.0, nrmu, nrmv;
     double u[N][N], v[N][N], du[N][N], dv[N][N];
     MPI_Status status;
