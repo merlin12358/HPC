@@ -75,8 +75,8 @@ void dxdt(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
     }
 
 //    // Perform a reduction operation on the diffusion term values from all ranks
-//    MPI_Allreduce(&lapu, &global_lapu, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-//    MPI_Allreduce(&lapv, &global_lapv, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&lapu, &global_lapu, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&lapv, &global_lapv, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 //    // Use the global sum of the diffusion term values to update the du and dv arrays
 //    for (int i = start_row; i < end_row; i++){
 //        for (int j = 0; j < N; j++){
@@ -103,18 +103,19 @@ void step(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
 }
 
 double norm(double x[N][N]){
+    int rows_per_process = N / size;
+    int start_row = rows_per_process * rank;
+    int end_row = start_row + rows_per_process;
     double local_norm, global_norm;
     // Calculate the norm of the portion of the array assigned to this process
     local_norm = 0.0;
-    for (int i = 0; i < N; i++){
+    for (int i = start_row; i < end_row; i++){
         for (int j = 0; j < N; j++){
             local_norm += x[i][j]*x[i][j];
         }
     }
-    printf(local_norm);
     // Perform a reduction operation on the norm values from all ranks
     MPI_Reduce(&local_norm, &global_norm, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-    printf(global_norm);
     return global_norm;
 }
 
