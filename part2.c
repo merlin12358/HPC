@@ -91,11 +91,11 @@ void step(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
     }
 }
 
-double norm(double u[N][N], double v[N][N]) {
+double norm(double x[N][N]) {
     double local_norm = 0.0;
     for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
-            local_norm += (u[i][j] - v[i][j]) * (u[i][j] - v[i][j]);
+            local_norm += x[i][j]*x[i][j];;
         }
     }
     double global_norm;
@@ -104,7 +104,7 @@ double norm(double u[N][N], double v[N][N]) {
 }
 
 
-int main(int argc, char* argv){
+int main(int argc, char** argv){
     MPI_Init( &argc, &argv );
     double t = 0.0, nrmu, nrmv;
     double u[N][N], v[N][N], du[N][N], dv[N][N];
