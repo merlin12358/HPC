@@ -11,14 +11,10 @@ const double dt	= 0.1;			// time step
 const double dx	= 2.0;			// spatial resolution
 const double DD = 1.0/(dx*dx);	// diffusion scaling
 const int m		= (int)(1/dt);	// Norm calculation
-
+int size, rank;
 void init(double u[N][N], double v[N][N]){
-    int size, rank;
     double uhi, ulo, vhi, vlo;
     uhi = 0.5; ulo = -0.5; vhi = 0.1; vlo = -0.1;
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
     // Determine the portion of the grid that this process will handle
     int rows_per_process = N / size;
     int start_row = rows_per_process * rank;
@@ -35,12 +31,9 @@ void init(double u[N][N], double v[N][N]){
 
 
 void dxdt(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
-    int size, rank;
     double lapu, lapv;
     int up, down, left, right;
     double global_lapu, global_lapv;
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     // Determine the portion of the grid that this process will handle
     int rows_per_process = N / size;
@@ -95,9 +88,6 @@ void dxdt(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
 
 
 void step(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
-    int size, rank;
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     // Determine the portion of the grid that this process will handle
     int rows_per_process = N / size;
@@ -105,14 +95,6 @@ void step(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
     int end_row = start_row + rows_per_process;
 
     // Send and receive values of the border indices to/from neighboring processes
-    if (rank > 0) {
-        MPI_Send(&u[start_row][0], N, MPI_DOUBLE, rank-1, 0, MPI_COMM_WORLD);
-        MPI_Recv(&u[start_row-1][0], N, MPI_DOUBLE, rank-1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    }
-    if (rank < size-1) {
-        MPI_Send(&u[end_row-1][0], N, MPI_DOUBLE, rank+1, 0, MPI_COMM_WORLD);
-        MPI_Recv(&u[end_row][0], N, MPI_DOUBLE, rank+1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    }
 
     // Update the portion of the grid assigned to this process
     for (int i = start_row; i < end_row; i++){
@@ -124,11 +106,7 @@ void step(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
 }
 
 double norm(double x[N][N]){
-    int size, rank;
     double local_norm, global_norm;
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
     // Calculate the norm of the portion of the array assigned to this process
     local_norm = 0.0;
     for (int i = 0; i < N; i++){
@@ -145,9 +123,16 @@ double norm(double x[N][N]){
 
 
 int main(int argc, char** argv){
+    MPI_Status status;
     MPI_Init( &argc, &argv );
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     double t = 0.0, nrmu, nrmv;
     double u[N][N], v[N][N], du[N][N], dv[N][N];
+
+    int rows_per_process = N / size;
+    int start_row = rows_per_process * rank;
+    int end_row = start_row + rows_per_process;
 
     FILE *fptr = fopen("nrms.txt", "w");
     fprintf(fptr, "# t\t\tnrmu\t\tnrmv\n");
@@ -157,6 +142,34 @@ int main(int argc, char** argv){
 
     // time-loop
     for (int k=0; k < M; k++){
+        if (rank > 0) {
+            // Send top border row to the process with rank-1
+            MPI_Send(u[start_row], N, MPI_DOUBLE, rank-1, 0, MPI_COMM_WORLD);
+            MPI_Send(v[start_row], N, MPI_DOUBLE, rank-1, 1, MPI_COMM_WORLD);
+        }
+        if (rank < size-1) {
+            // Receive bottom border row from the process with rank+1
+            MPI_Recv(u[end_row+1], N, MPI_DOUBLE, rank+1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(v[end_row+1], N, MPI_DOUBLE, rank+1, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
+        if (rank < size-1) {
+            // Send bottom border row to the process with rank+1
+            MPI_Send(u[end_row], N, MPI_DOUBLE, rank+1, 2, MPI_COMM_WORLD);
+            MPI_Send(v[end_row], N, MPI_DOUBLE, rank+1, 3, MPI_COMM_WORLD);
+        }
+        if (rank > 0) {
+            // Receive top border row from the process with rank-1
+            MPI_Recv(u[start_row-1], N, MPI_DOUBLE, rank-1, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(v[start_row-1], N, MPI_DOUBLE, rank-1, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
+//        if (rank > 0) {
+//            MPI_Send(&u[start_row][0], N, MPI_DOUBLE, rank-1, 0, MPI_COMM_WORLD);
+//            MPI_Recv(&u[start_row-1][0], N, MPI_DOUBLE, rank-1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+//        }
+//        if (rank < size-1) {
+//            MPI_Send(&u[end_row-1][0], N, MPI_DOUBLE, rank+1, 0, MPI_COMM_WORLD);
+//            MPI_Recv(&u[end_row][0], N, MPI_DOUBLE, rank+1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+//        }
         // track the time
         t = dt*k;
         // evaluate the PDE
@@ -167,8 +180,10 @@ int main(int argc, char** argv){
             // calculate the norms
             nrmu = norm(u);
             nrmv = norm(v);
-            printf("t = %2.1f\tu-norm = %2.5f\tv-norm = %2.5f\n", t, nrmu, nrmv);
-            fprintf(fptr, "%f\t%f\t%f\n", t, nrmu, nrmv);
+            if (rank == 0) {
+                printf("t = %2.1f\tu-norm = %2.5f\tv-norm = %2.5f\n", t, nrmu, nrmv);
+                fprintf(fptr, "%f\t%f\t%f\n", t, nrmu, nrmv);
+            }
         }
     }
 
