@@ -176,7 +176,7 @@ int main(int argc, char** argv){
         dxdt(du, dv, u, v);
         // update the state variables u,v
         step(du, dv, u, v);
-        exchange_border_rows_with_mpi(u,v)
+        exchange_border_rows_with_mpi(u,v);
         if (k%m == 0){
             // calculate the norms
             nrmu = norm(u);
