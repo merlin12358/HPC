@@ -1,6 +1,7 @@
 #include <stdio.h>				// needed for printing
 #include <math.h>				// needed for tanh, used in init function
 #include <mpi.h>
+
 const int N 	= 128;			// domain size
 const int M		= 50000;		// number of time steps
 const double a 	= 0.3;			// model parameter a
@@ -13,15 +14,9 @@ const double DD = 1.0/(dx*dx);	// diffusion scaling
 const int m		= (int)(1/dt);	// Norm calculation
 
 void init(double u[N][N], double v[N][N]){
-    int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
     double uhi, ulo, vhi, vlo;
     uhi = 0.5; ulo = -0.5; vhi = 0.1; vlo = -0.1;
-    int block_size = N / size;
-    int start = rank * block_size;
-    int end = start + block_size;
-    for (int i=start; i < end; i++){
+    for (int i=0; i < N; i++){
         for (int j=0; j < N; j++){
             u[i][j] = ulo + (uhi-ulo)*0.5*(1.0 + tanh((i-N/2)/16.0));
             v[i][j] = vlo + (vhi-vlo)*0.5*(1.0 + tanh((j-N/2)/16.0));
@@ -29,89 +24,141 @@ void init(double u[N][N], double v[N][N]){
     }
 }
 
-void dxdt(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]) {
-    int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-
-    int block_size = N / size;
-    int start = rank * block_size;
-    int end = start + block_size;
-
-    // P2P exchange of border indices
-    if (rank > 0) {
-        MPI_Sendrecv(u[start], N, MPI_DOUBLE, rank - 1, 0, u[start - 1], N, MPI_DOUBLE, rank - 1, 0, MPI_COMM_WORLD,
-                     MPI_STATUS_IGNORE);
-        MPI_Sendrecv(v[start], N, MPI_DOUBLE, rank - 1, 0, v[start - 1], N, MPI_DOUBLE, rank - 1, 0, MPI_COMM_WORLD,
-                     MPI_STATUS_IGNORE);
-    }
-    if (rank < size - 1) {
-        MPI_Sendrecv(u[end - 1], N, MPI_DOUBLE, rank + 1, 0, u[end], N, MPI_DOUBLE, rank + 1, 0, MPI_COMM_WORLD,
-                     MPI_STATUS_IGNORE);
-        MPI_Sendrecv(v[end - 1], N, MPI_DOUBLE, rank + 1, 0, v[end], N, MPI_DOUBLE, rank + 1, 0, MPI_COMM_WORLD,
-                     MPI_STATUS_IGNORE);
-    }
-
+void dxdt(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
+    int size, rank;
     double lapu, lapv;
     int up, down, left, right;
-    for (int i = start; i < end; i++) {
-        for (int j = 0; j < N; j++) {
-            // Update up and down indices based on new border values
-            if (i == start) up = i + 1;
-            else up = i - 1;
-            if (i == end - 1) down = i - 1;
-            else down = i + 1;
+    double global_lapu, global_lapv;
 
-            // Update left and right indices based on new border values
-            if (j == 0) left = j + 1;
-            else left = j - 1;
-            if (j == N - 1) right = j - 1;
-            else right = j + 1;
+    MPI_Init(NULL, NULL);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
+    // Determine the portion of the grid that this process will handle
+    int rows_per_process = N / size;
+    int start_row = rows_per_process * rank;
+    int end_row = start_row + rows_per_process;
 
-//            lapu = u[up][j] + u[down][j] + u[i][left] + u[i][right] + -4.0*u[i][j];
-//            lapv = v[up][j] + v[down][j] + v[i][left] + v[i][right] + -4.0*v[i][j];
-//            du[i][j] = DD*lapu + u[i][j]*(1.0 - u[i][j])*(u[i][j]-b) - v[i][j];
-//            dv[i][j] = d*DD*lapv + c*(a*u[i][j] - v[i][j]);
-            lapu = (u[up][j] + u[down][j] + u[i][left] + u[i][right] - 4 * u[i][j]) * DD;
-            lapv = (v[up][j] + v[down][j] + v[i][left] + v[i][right] - 4 * v[i][j]) * DD;
-            du[i][j] = a * u[i][j] - u[i][j] * v[i][j] * u[i][j] + c * lapu;
-            dv[i][j] = b * u[i][j] * u[i][j] - d * v[i][j] + lapv;
+    // Calculate the diffusion term for the portion of the grid assigned to this process
+    for (int i = start_row; i < end_row; i++){
+        for (int j = 0; j < N; j++){
+            if (i == 0){
+                down = i;
+            }
+            else{
+                down = i-1;
+            }
+            if (i == N-1){
+                up = i;
+            }
+            else{
+                up = i+1;
+            }
+            if (j == 0){
+                left = j;
+            }
+            else{
+                left = j-1;
+            }
+            if (j == N-1){
+                right = j;
+            }
+            else{
+                right = j+1;
+            }
+            lapu = u[up][j] + u[down][j] + u[i][left] + u[i][right] + -4.0*u[i][j];
+            lapv = v[up][j] + v[down][j] + v[i][left] + v[i][right] + -4.0*v[i][j];
+            du[i][j] = DD*lapu + u[i][j]*(1.0 - u[i][j])*(u[i][j]-b) - v[i][j];
+            dv[i][j] = d*DD*lapv + c*(a*u[i][j] - v[i][j]);
         }
     }
+
+    // Perform a reduction operation on the diffusion term values from all ranks
+    MPI_Allreduce(&lapu, &global_lapu, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&lapv, &global_lapv, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+// Use the global sum of the diffusion term values to update the du and dv arrays
+    for (int i = start_row; i < end_row; i++){
+        for (int j = 0; j < N; j++){
+            du[i][j] = DD*global_lapu + u[i][j]*(1.0 - u[i][j])*(u[i][j]-b) - v[i][j];
+            dv[i][j] = d*DD*global_lapv + c*(a*u[i][j] - v[i][j]);
+        }
+    }
+    MPI_Finalize();
 }
 
-
 void step(double du[N][N], double dv[N][N], double u[N][N], double v[N][N]){
-    for (int i = 0; i < N; i++){
+    int size, rank;
+
+    MPI_Init(NULL, NULL);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    // Determine the portion of the grid that this process will handle
+    int rows_per_process = N / size;
+    int start_row = rows_per_process * rank;
+    int end_row = start_row + rows_per_process;
+
+    // Send and receive values of the border indices to/from neighboring processes
+    if (rank > 0) {
+        MPI_Send(&u[start_row][0], N, MPI_DOUBLE, rank-1, 0, MPI_COMM_WORLD);
+        MPI_Recv(&u[start_row-1][0], N, MPI_DOUBLE, rank-1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+    if (rank < size-1) {
+        MPI_Send(&u[end_row-1][0], N, MPI_DOUBLE, rank+1, 0, MPI_COMM_WORLD);
+        MPI_Recv(&u[end_row][0], N, MPI_DOUBLE, rank+1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+
+    // Update the portion of the grid assigned to this process
+    for (int i = start_row; i < end_row; i++){
         for (int j = 0; j < N; j++){
             u[i][j] += dt*du[i][j];
             v[i][j] += dt*dv[i][j];
         }
     }
+
+    MPI_Finalize();
 }
 
-double norm(double x[N][N]) {
-    double local_norm = 0.0;
-    for (int i = 0; i < N; i++) {
-        for (int j = 0; j < N; j++) {
-            local_norm += x[i][j]*x[i][j];;
+
+double norm(double x[N][N]){
+    int size, rank;
+    double local_norm, global_norm;
+
+    MPI_Init(NULL, NULL);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    // Calculate the norm of the portion of the array assigned to this process
+    local_norm = 0.0;
+    for (int i = 0; i < N; i++){
+        for (int j = 0; j < N; j++){
+            local_norm += x[i][j]*x[i][j];
         }
     }
-    double global_norm;
+
+    // Perform a reduction operation on the norm values from all ranks
     MPI_Reduce(&local_norm, &global_norm, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-    return sqrt(global_norm);
+
+    MPI_Finalize();
+
+    return global_norm;
 }
 
 
 int main(int argc, char** argv){
-    MPI_Init( &argc, &argv );
+
     double t = 0.0, nrmu, nrmv;
     double u[N][N], v[N][N], du[N][N], dv[N][N];
+    MPI_Status status;
+    MPI_Init( &argc, &argv );
+    MPI_Comm_rank( MPI_COMM_WORLD, &rank );
+    MPI_Comm_size( MPI_COMM_WORLD, &size );
 
     FILE *fptr = fopen("nrms.txt", "w");
     fprintf(fptr, "# t\t\tnrmu\t\tnrmv\n");
-
+    if (size != 4){	// Hardcoding a four-process decomposition
+        MPI_Abort( MPI_COMM_WORLD, 1 );
+    }
     // initialize the state
     init(u, v);
 
@@ -133,6 +180,5 @@ int main(int argc, char** argv){
     }
 
     fclose(fptr);
-    MPI_Finalize();
     return 0;
 }
