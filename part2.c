@@ -111,10 +111,10 @@ double norm(double x[N][N]){
             local_norm += x[i][j]*x[i][j];
         }
     }
-    print(local_norm)
+    print(local_norm);
     // Perform a reduction operation on the norm values from all ranks
     MPI_Reduce(&local_norm, &global_norm, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-    print(global_norm)
+    print(global_norm);
     return global_norm;
 }
 
